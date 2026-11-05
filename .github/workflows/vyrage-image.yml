@@ -1,0 +1,59 @@
+name: Image VYRAGE
+
+on:
+  push:
+    branches: [vyrage-image]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE: ghcr.io/lucascenseur/cal.diy
+  DB_URL: postgresql://unicorn_user:magical_password@database:5432/calendso
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Libérer le disque
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+
+      - uses: actions/checkout@v4
+
+      - name: Base temporaire pour le build
+        run: |
+          grep -o '^[^#]*' .env.example > .env
+          docker compose up -d database
+
+      - uses: docker/setup-buildx-action@v3
+        with:
+          driver-opts: network=container:database
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: ./
+          file: ./Dockerfile
+          push: true
+          platforms: linux/amd64
+          tags: |
+            ${{ env.IMAGE }}:latest
+            ${{ env.IMAGE }}:${{ github.sha }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/lucascenseur/cal.diy
+          build-args: |
+            NEXT_PUBLIC_WEBAPP_URL=https://rdv.vyrage.eu
+            NEXT_PUBLIC_API_V2_URL=https://rdv.vyrage.eu/api/v2
+            NEXT_PUBLIC_LICENSE_CONSENT=agree
+            NEXT_PUBLIC_WEBSITE_PRIVACY_POLICY_URL=https://vyrage.eu/politique-de-confidentialite/
+            CALCOM_TELEMETRY_DISABLED=1
+            DATABASE_URL=${{ env.DB_URL }}
+            DATABASE_DIRECT_URL=${{ env.DB_URL }}
